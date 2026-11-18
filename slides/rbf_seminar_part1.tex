@@ -1,0 +1,741 @@
+% =====================================================================
+%  Seminar: Introduction to RBF Approximation
+%  Part 1 — Least-squares RBF approximation of scattered data
+%  Examples: example01_rbf_mq_slsqp.py, example02_rbf_greedy_centers.py
+%  Compile: pdflatex rbf_seminar_part1.tex   (twice)
+% =====================================================================
+\documentclass[10pt,aspectratio=169]{beamer}
+
+\usetheme{metropolis}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.16}
+\usepackage{listings}
+\usepackage[ruled,linesnumbered]{algorithm2e}
+\usepackage{xcolor}
+
+\graphicspath{{figures/}}
+
+% ---- colors and small helpers ---------------------------------------
+\definecolor{accent}{RGB}{200,60,40}
+\definecolor{codebg}{RGB}{245,245,245}
+\newcommand{\hl}[1]{\textcolor{accent}{\textbf{#1}}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\x}{\bm{x}}
+\newcommand{\cc}{\bm{c}}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!45!black}\itshape,
+  stringstyle=\color{accent},
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{gray!40},
+  showstringspaces=false, columns=fullflexible,
+  xleftmargin=2pt, xrightmargin=2pt
+}
+
+% ---- title ----------------------------------------------------------
+\title{Introduction to RBF Approximation}
+\subtitle{Part 1 — Least-squares approximation of scattered data}
+\author{Whady Felipe Florez}
+\institute{Universidad Pontificia Bolivariana}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+% =====================================================================
+\section{The problem}
+% =====================================================================
+
+\begin{frame}{What we have: scattered data}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      We are given $n$ measurements
+      \[
+        (\x_i,\, y_i), \qquad \x_i \in \R^2,\quad i=1,\dots,n
+      \]
+      \begin{itemize}
+        \item The points $\x_i$ are \hl{scattered}: no grid, no structure.
+        \item The values are $y_i = f(\x_i) + \text{noise}$.
+        \item The function $f$ is \hl{unknown}.
+      \end{itemize}
+      \vspace{0.3em}
+      \textbf{Goal:} build a function $s(\x)$, defined \emph{everywhere},
+      that represents the data well.
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      \centering
+      \includegraphics[height=0.72\textheight,trim=0 0 766 0,clip]{example01_results.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Interpolation or approximation?}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Interpolation}
+      \begin{itemize}
+        \item $s(\x_i) = y_i$ \emph{exactly}, for every $i$.
+        \item As many unknowns as data: $n$ equations, $n$ unknowns.
+        \item Reproduces the \hl{noise} too.
+        \item Large $n$ $\Rightarrow$ large, often ill-conditioned systems.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Approximation} (this seminar)
+      \begin{itemize}
+        \item $s(\x_i) \approx y_i$.
+        \item Few unknowns: $m < n$ terms.
+        \item More equations than unknowns $\Rightarrow$ solve in the
+              \hl{least-squares} sense.
+        \item Smooths the noise, cheaper model.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{1em}
+  \begin{alertblock}{Key question}
+    Which $m$ terms should we use, and how do we compute their coefficients?
+  \end{alertblock}
+\end{frame}
+
+% =====================================================================
+\section{The RBF model}
+% =====================================================================
+
+\begin{frame}{Radial basis functions}
+  \begin{columns}[c]
+    \begin{column}{0.50\textwidth}
+      A \hl{radial} function depends only on the \emph{distance} to a point
+      $\cc$, called its \textbf{center}:
+      \[
+        \phi\big(\lVert \x - \cc \rVert\big)
+      \]
+      \begin{itemize}
+        \item Works in any dimension: only distances are needed.
+        \item No mesh, no grid: ideal for scattered data.
+      \end{itemize}
+      \vspace{0.3em}
+      \textbf{Multiquadric (MQ):}
+      \[
+        \phi(r) = \sqrt{1 + (\varepsilon r)^2}
+      \]
+      $\varepsilon > 0$ is the \hl{shape parameter}.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          width=\linewidth, height=0.62\textheight,
+          xlabel={$r = \lVert \x - \cc\rVert$}, ylabel={$\phi(r)$},
+          xmin=-1, xmax=1, ymin=0, ymax=6.5,
+          legend pos=north west, legend style={font=\scriptsize},
+          tick label style={font=\scriptsize}, label style={font=\small},
+          samples=101, domain=-1:1, thick]
+          \addplot[blue]   {sqrt(1+(1*x)^2)};  \addlegendentry{$\varepsilon=1$}
+          \addplot[accent] {sqrt(1+(3*x)^2)};  \addlegendentry{$\varepsilon=3$}
+          \addplot[green!50!black] {sqrt(1+(6*x)^2)}; \addlegendentry{$\varepsilon=6$}
+        \end{axis}
+      \end{tikzpicture}
+
+      {\scriptsize Small $\varepsilon$: flat. Large $\varepsilon$: sharp ``V''.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Polynomial augmentation}
+  We add a low-degree polynomial to the RBF sum. In 2D, a quadratic
+  polynomial has \hl{6 terms}:
+  \[
+    p_k(\x) \in \{\,1,\; x_1,\; x_2,\; x_1^2,\; x_1x_2,\; x_2^2\,\}
+  \]
+  \textbf{Why?}
+  \begin{itemize}
+    \item The model can reproduce smooth trends (constants, slopes,
+          curvature) exactly.
+    \item Better accuracy, especially near the boundary of the domain.
+    \item The RBFs only have to capture what the polynomial cannot.
+  \end{itemize}
+  \vspace{0.5em}
+  \begin{block}{The complete model with $m$ centers}
+    \[
+      s(\x) \;=\; \underbrace{\sum_{j=1}^{m} a_j\,
+        \phi\big(\lVert \x - \cc_j \rVert\big)}_{\text{RBF part}}
+      \;+\; \underbrace{\sum_{k=1}^{6} b_k\, p_k(\x)}_{\text{polynomial part}}
+    \]
+    Unknowns: $a_1,\dots,a_m$ and $b_1,\dots,b_6$ \;$\Rightarrow$\; $m+6$ coefficients.
+  \end{block}
+\end{frame}
+
+\begin{frame}{The model in matrix form}
+  Evaluating $s$ at the $n$ data points gives $n$ equations
+  $s(\x_i) \approx y_i$, i.e.
+  \[
+    \underbrace{\begin{bmatrix} \Phi & P \end{bmatrix}}_{A\;(n\times(m+6))}
+    \underbrace{\begin{bmatrix} \bm{a} \\ \bm{b} \end{bmatrix}}_{\bm{w}}
+    \;\approx\; \bm{y},
+    \qquad
+    \Phi_{ij} = \phi\big(\lVert \x_i - \cc_j\rVert\big), \quad
+    P_{ik} = p_k(\x_i)
+  \]
+  \begin{itemize}
+    \item Row $i$ $\leftrightarrow$ data point $\x_i$.
+    \item Column $j$ of $\Phi$ $\leftrightarrow$ RBF centered at $\cc_j$.
+    \item $n > m+6$: \hl{overdetermined} system, no exact solution in general.
+  \end{itemize}
+  \vspace{0.3em}
+  \begin{block}{Least squares}
+    Choose $\bm{w}$ that minimizes the total squared error
+    \[
+      \text{SSE} = \sum_{i=1}^{n} \big(s(\x_i) - y_i\big)^2
+                 = \lVert A\bm{w} - \bm{y} \rVert^2
+    \]
+  \end{block}
+\end{frame}
+
+\begin{frame}{The orthogonality condition}
+  With polynomial augmentation it is usual to impose
+  \[
+    \sum_{j=1}^{m} a_j\, p_k(\cc_j) = 0, \quad k=1,\dots,6
+    \qquad\Longleftrightarrow\qquad
+    P_c^{T}\bm{a} = \bm{0}
+  \]
+  where $P_c$ is the polynomial matrix evaluated at the \emph{centers}.
+  \vspace{0.5em}
+  \begin{itemize}
+    \item It prevents the RBF part from ``imitating'' the polynomial part:
+          each part has its own job.
+    \item In \hl{interpolation} ($m = n$) it is \emph{necessary}: it gives the
+          6 extra equations that make the square system uniquely solvable.
+    \item In \hl{approximation} ($m < n$) it is \emph{optional}: least squares
+          already has a unique solution if $A$ has full rank.
+  \end{itemize}
+  \vspace{0.5em}
+  We will use it in Example~1, and discuss when to drop it in Example~2.
+\end{frame}
+
+% =====================================================================
+\section{Example 1: random centers}
+% =====================================================================
+
+\begin{frame}[fragile]{Example 1: setup}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{itemize}
+        \item True function: \hl{Franke's function}, a classical test function
+              on $[0,1]^2$ (unknown in practice).
+        \item $n = 200$ random points, noise $\sigma = 0.02$.
+        \item $m = 30$ centers, chosen \hl{at random} among the data points.
+        \item MQ with \emph{fixed} $\varepsilon = 3$.
+        \item Quadratic polynomial (6 terms).
+      \end{itemize}
+      \vspace{0.3em}
+      Unknowns: $m + 6 = 36$ \quad Equations: $n = 200$
+    \end{column}
+    \begin{column}{0.44\textwidth}
+\begin{lstlisting}
+SEED      = 0
+N_DATA    = 200
+M_CENTERS = 30
+EPS       = 3.0
+NOISE     = 0.02
+
+X = rng.random((N_DATA, 2))
+y = franke(X[:,0], X[:,1]) \
+    + NOISE*rng.standard_normal(N_DATA)
+
+idx = rng.choice(N_DATA, M_CENTERS,
+                 replace=False)
+C = X[idx]           # the centers
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Example 1: the optimization problem}
+  \[
+    \min_{\bm{w}}\; J(\bm{w}) = \tfrac12\,\lVert A\bm{w} - \bm{y}\rVert^2
+    \qquad \text{subject to} \qquad P_c^T\bm{a} = \bm{0}
+  \]
+  \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+      \begin{itemize}
+        \item Exact gradient:
+              $\nabla J = A^T(A\bm{w} - \bm{y})$.
+        \item Solver: \texttt{scipy.optimize.minimize} with \hl{SLSQP}
+              (Sequential Least-Squares Quadratic Programming).
+        \item SLSQP accepts \hl{equality constraints}; BFGS and similar
+              methods do not.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.52\textwidth}
+\begin{lstlisting}
+def J(w):
+    r = A @ w - y
+    return 0.5 * r @ r
+
+def grad_J(w):
+    return A.T @ (A @ w - y)
+
+G = np.hstack([Pc.T, np.zeros((6, 6))])
+cons = [{"type": "eq",
+         "fun": lambda w: G @ w,
+         "jac": lambda w: G}]
+
+sol = minimize(J, np.zeros(n_par),
+               jac=grad_J, constraints=cons,
+               method="SLSQP")
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 1: results}
+  \centering
+  \begin{tabular}{lr}
+    \toprule
+    Quantity & Value \\
+    \midrule
+    SLSQP converged & yes, 248 iterations \\
+    Constraint residual $\lVert P_c^T\bm{a}\rVert$ & $\approx 10^{-13}$ \\
+    Condition number $\operatorname{cond}(A)$ & $2.7\times 10^{6}$ \\
+    \midrule
+    Total squared error $\sum_i (s(\x_i)-y_i)^2$ & $0.132$ \\
+    RMSE at the data points & $0.026$ \\
+    RMSE vs.\ true $f$ on an $80\times80$ grid & $0.027$ \\
+    Maximum error on the grid & $0.121$ \\
+    \bottomrule
+  \end{tabular}
+  \vspace{1em}
+
+  \small The RMSE is of the order of the noise level $\sigma = 0.02$:
+  the model captures $f$, not the noise.
+\end{frame}
+
+\begin{frame}{Example 1: the approximated surface}
+  \begin{columns}[c]
+    \begin{column}{0.58\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=422 0 391 0,clip]{example01_results.png}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \begin{itemize}
+        \item Surface: $s(\x)$ evaluated on a fine grid.
+        \item Black dots: the 200 noisy data $y_i$.
+        \item The surface follows the trend of the data without passing exactly through each point.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 1: where is the error?}
+  \begin{columns}[c]
+    \begin{column}{0.58\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=797 0 0 0,clip]{example01_results.png}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \begin{itemize}
+        \item Color: $|s(\x)-f(\x)|$, computed only because we know $f$.
+        \item Cyan dots: the 30 random centers.
+        \item Largest errors: near the corners and around the peak at $\approx(0.2,0.2)$, where $f$ changes fast.
+        \item Some regions get several centers, others almost none.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 1: observations}
+  \begin{enumerate}
+    \item \textbf{Approximation works:} 36 coefficients represent 200 noisy
+          values with an error close to the noise level.
+    \item \textbf{The error is not uniform.} It is larger where the function
+          varies fast and where there are few centers (e.g.\ near the
+          corners and around the peak at $\approx(0.2,0.2)$).
+    \item \textbf{Ill-conditioning.} $\operatorname{cond}(A)\sim 10^6$: many
+          different coefficient vectors give almost the same fit. The fit
+          is reliable; individual coefficients are not.
+    \item \textbf{SLSQP is slow here.} The problem is quadratic, but SLSQP
+          builds a quasi-Newton approximation of the Hessian ($A^TA$), so it
+          needs $\sim 250$ iterations.
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{An alternative formulation}
+  The orthogonality conditions can also be written as \hl{extra equations}
+  of the collocation system:
+  \[
+    \begin{bmatrix} \Phi & P \\ P_c^T & 0 \end{bmatrix}
+    \begin{bmatrix} \bm{a} \\ \bm{b} \end{bmatrix}
+    \approx
+    \begin{bmatrix} \bm{y} \\ \bm{0} \end{bmatrix}
+    \qquad \big((n+6)\times(m+6)\big)
+  \]
+  \begin{itemize}
+    \item One overdetermined system, solved in the optimal (least-squares)
+          sense, e.g.\ with iterative methods (LSQR, LSMR).
+    \item Difference: the constraint is satisfied only
+          \emph{approximately}, competing with the data residuals.
+    \item To enforce it more strongly, multiply the last 6 rows by a large
+          weight.
+  \end{itemize}
+\end{frame}
+
+% =====================================================================
+\section{Example 2: greedy selection of centers}
+% =====================================================================
+
+\begin{frame}{Motivation}
+  In Example 1 the centers were chosen at random. Look at the figure:
+  \begin{itemize}
+    \item Some regions have several centers close together.
+    \item Other regions, where $f$ changes fast, have few or none.
+  \end{itemize}
+  \vspace{0.5em}
+  \begin{alertblock}{Question}
+    Can we choose the centers \emph{using the data}, so that each center is
+    placed where it helps most?
+  \end{alertblock}
+  \vspace{0.5em}
+  \textbf{Idea (greedy):} add centers one at a time. At each step, try every
+  candidate and keep the one that reduces the error the most.
+\end{frame}
+
+\begin{frame}{The greedy algorithm}
+  \begin{columns}[c]
+    \begin{column}{0.64\textwidth}
+      \footnotesize
+      \begin{algorithm}[H]
+        \caption{Greedy center selection}
+        $S \leftarrow \emptyset$ \tcp*{polynomial-only model}
+        $\text{SSE}_0 \leftarrow$ least-squares error with $S$\;
+        \For{$k = 1, 2, \dots$}{
+          \ForEach{data point $\cc \notin S$}{
+            $A \leftarrow [\,\Phi(X, S\cup\{\cc\}) \mid P(X)\,]$\;
+            solve $\min_{\bm{w}} \lVert A\bm{w}-\bm{y}\rVert^2$\;
+            $\text{SSE}(\cc) \leftarrow \lVert A\bm{w}-\bm{y}\rVert^2$\;
+          }
+          $\cc^\ast \leftarrow \arg\min_{\cc}\, \text{SSE}(\cc)$\;
+          \If{$(\text{SSE}_{k-1}-\text{SSE}(\cc^\ast))/\text{SSE}_{k-1} < \text{TOL}$}{
+            \textbf{stop} \tcp*{$\cc^\ast$ is rejected}
+          }
+          $S \leftarrow S \cup \{\cc^\ast\}$,\;
+          $\text{SSE}_k \leftarrow \text{SSE}(\cc^\ast)$\;
+        }
+        Final refit with $S$ \textbf{and} $P_c^T\bm{a}=\bm{0}$ (SLSQP)\;
+      \end{algorithm}
+    \end{column}
+    \begin{column}{0.34\textwidth}
+      \begin{itemize}
+        \item Candidates: all $n$ data points.
+        \item Step $k$ tries $n-(k-1)$ candidates.
+        \item Same data, $\varepsilon$ and polynomial as Example~1.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Design decision 1: no constraint during the selection}
+  With $k$ centers, $P_c^T\bm{a} = \bm{0}$ is a system of
+  \hl{6 equations with $k$ unknowns}.
+  \begin{itemize}
+    \item If $k < 6$, in general the only solution is $\bm{a} = \bm{0}$.
+    \item Every candidate would give the same error (polynomial only)
+          $\Rightarrow$ the greedy algorithm could not even start.
+  \end{itemize}
+  \vspace{0.5em}
+  \textbf{Solution:}
+  \begin{itemize}
+    \item \textbf{Selection:} RBF + polynomial, \emph{without} constraint
+          (allowed: the problem is overdetermined, $k+6 < n$).
+    \item \textbf{Final refit:} with the selected centers, RBF + polynomial
+          \emph{with} constraint, solved with SLSQP exactly as in Example 1.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Design decision 2: a fast solver for the trial fits}
+  \begin{itemize}
+    \item The greedy loop needs \hl{thousands} of least-squares fits
+          (here $\approx 7000$).
+    \item SLSQP is iterative ($\sim$250 iterations per fit): far too slow.
+    \item \texttt{scipy.linalg.lstsq} solves each fit \hl{directly}
+          (SVD), in one step.
+    \item Trick: every candidate is a data point, so we compute
+          \emph{once} the $n\times n$ matrix
+          $\Phi_{\text{all}}[i,j] = \phi(\lVert \x_i - \x_j\rVert)$ and just
+          pick columns.
+  \end{itemize}
+\begin{lstlisting}
+Phi_all = multiquadric(distances(X, X), EPS)     # n x n, computed once
+
+def ls_fit(idx):
+    A = np.hstack([Phi_all[:, idx], P_data])     # n x (k+6)
+    w, *_ = lstsq(A, y)
+    r = A @ w - y
+    return w, r @ r                              # coefficients, SSE
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}{Stopping criterion}
+  Stop when one more center \hl{no longer helps enough}:
+  \[
+    \frac{\text{SSE}_{k-1} - \text{SSE}_k}{\text{SSE}_{k-1}} < \text{TOL}
+    \qquad (\text{TOL} = 1\%)
+  \]
+  A cap $M_{\max} = n/2$ only protects against an endless loop (not reached).
+  \vspace{0.5em}
+
+  \centering\small
+  \begin{tabular}{lll}
+    \toprule
+    Level & What it does & Stopping criterion? \\
+    \midrule
+    Outer greedy loop & adds centers one by one & yes: relative improvement $<$ TOL \\
+    Inner loop & tries all remaining candidates & no: ends when the list ends \\
+    Each trial fit & \texttt{lstsq} (direct) & no: not iterative \\
+    Final refit & SLSQP with constraint & yes: SLSQP's own tolerance \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{Example 2: results}
+  The greedy loop stopped at \hl{$m = 39$ centers}: the 40th best candidate
+  improved the SSE by only $0.43\%$. Total: $\approx 7000$ trial fits in
+  about 2 seconds.
+  \vspace{0.8em}
+
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Model ($m = 39$) & Total squared error & RMSE vs.\ true $f$ \\
+    \midrule
+    Greedy, without constraint & $0.052$ & $0.019$ \\
+    Greedy, with constraint (SLSQP) & $0.068$ & $0.018$ \\
+    Random, with constraint (SLSQP) & $0.094$ & $0.021$ \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \raggedright\small
+  Removing the constraint lowers the error \emph{on the data}, but the
+  error against the true function is practically the same.
+\end{frame}
+
+\begin{frame}{Example 2: the selected centers}
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 350 432 0,clip]{example02_results.png}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \begin{itemize}
+        \item Red circles: the 39 greedy centers; the number is the order of selection.
+        \item The first centers go to the main features of $f$ (peaks and valleys).
+        \item Compare with the random centers of Example~1.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 2: error on the data vs.\ number of centers}
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=432 350 0 0,clip]{example02_results.png}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \begin{itemize}
+        \item Total squared error on the data (log scale).
+        \item Blue: greedy. Orange: random, one center at a time.
+        \item Greedy decreases much faster.
+        \item Dotted line: noise floor $n\sigma^2$. Greedy crosses it at $k\approx 25$.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 2: true error vs.\ number of centers}
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 0 432 370,clip]{example02_results.png}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \begin{itemize}
+        \item RMSE against the true $f$ on an $80\times80$ grid.
+        \item Greedy reaches the noise level $\sigma$ with $\approx 20$ centers.
+        \item After that it no longer improves: extra centers fit the noise.
+        \item Possible only because we know $f$!
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 2: error map of the final model}
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=432 0 0 370,clip]{example02_results.png}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \begin{itemize}
+        \item Final model: greedy centers + constraint (SLSQP).
+        \item Lower RMSE than Example~1 ($0.018$ vs.\ $0.027$).
+        \item But the \hl{maximum} error is larger ($\approx 0.21$), at the left edge near $(0,0)$, where the model extrapolates beyond the data.
+        \item Greedy minimizes the \emph{squared} error on the data, not the worst-case error.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Observation 1: greedy vs.\ random}
+  \begin{itemize}
+    \item ``Random'' = each new center is a random point not yet used
+          (nested sets, same growth one center at a time). The first 30 are
+          exactly the centers of Example~1.
+    \item With greedy selection the error drops much faster:
+  \end{itemize}
+  \vspace{0.3em}
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    To reach RMSE $\le 0.025$ vs.\ $f$ & Greedy & Random \\
+    \midrule
+    Number of centers needed & 13 & 33 \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.5em}
+
+  \raggedright
+  \begin{itemize}
+    \item The first greedy centers go where $f$ has its main features.
+    \item The random curve is \hl{one realization}: another seed gives
+          different steps. A fair comparison averages several random runs.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Observation 2: the error on the data always decreases}
+  \begin{itemize}
+    \item The SSE on the data decreases at every step: more terms
+          \emph{always} fit the data better.
+    \item The error against the true $f$ stops improving after
+          $\approx 20$ centers and even grows slightly
+          (minimum $0.016$ at $k\approx 26$, $0.019$ at $k=39$).
+    \item After that point the model starts fitting the \hl{noise}:
+          this is \hl{overfitting}.
+  \end{itemize}
+  \vspace{0.5em}
+  \begin{alertblock}{Careful!}
+    We can \emph{see} the overfitting only because we know $f$. In a real
+    problem we only have the data, and the SSE on the data never warns us.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Observation 3: detecting overfitting with the data only}
+  \textbf{Discrepancy principle (Morozov):} do not fit the data more
+  accurately than the noise in them.
+  \[
+    \text{stop when}\quad \textstyle\sum_i (s(\x_i)-y_i)^2 \;\le\; n\,\sigma^2
+    \qquad (\text{here } n\sigma^2 = 0.08 \;\Rightarrow\; k \approx 25)
+  \]
+  \begin{itemize}
+    \item Needs $\sigma$ (instrument precision, or an estimate).
+    \item More precisely the target is $(n-p)\,\sigma^2$, with $p = k+6$
+          fitted parameters.
+  \end{itemize}
+  \textbf{Validation:} measure the error on points \emph{not used} in the fit.
+  \begin{itemize}
+    \item Hold-out set (e.g.\ 20\% of the data) or $k$-fold cross-validation.
+    \item Leave-one-out (LOOCV), cheap for linear least squares:
+          \[
+            e_i^{\text{LOO}} = \frac{r_i}{1 - h_{ii}}, \qquad
+            H = A(A^TA)^{-1}A^T
+          \]
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Observation 4: what greedy does and does not guarantee}
+  \begin{itemize}
+    \item At each step, the chosen center is the \hl{best possible} given
+          the centers already selected (all candidates are tried).
+    \item But greedy never revisits earlier choices: the final set is
+          \hl{not} necessarily the best set of 39 centers.
+    \item The global optimum would require trying all subsets:
+          \[
+            \binom{200}{39} \approx 5\times 10^{41}\ \text{combinations}
+          \]
+    \item Greedy does not penalize centers that are very close together
+          (e.g.\ centers 14 and 21 near $(0.5, 0.43)$): nearly equal columns
+          in $A$ $\Rightarrow$ worse conditioning.
+    \item Efficient versions update a QR factorization instead of refitting
+          from scratch (orthogonal matching pursuit).
+  \end{itemize}
+\end{frame}
+
+% =====================================================================
+\section{Exercise: optimizing the shape parameter}
+% =====================================================================
+
+\begin{frame}{Exercise: optimize $\varepsilon$}
+  In both examples $\varepsilon = 3$ was fixed. Once the centers are chosen,
+  $\varepsilon$ can also be tuned.
+  \vspace{0.3em}
+  \begin{itemize}
+    \item The coefficients enter \emph{linearly}, $\varepsilon$
+          \emph{nonlinearly} $\Rightarrow$ nested (separable) least squares:
+          \begin{itemize}
+            \item outer: 1D search over $\varepsilon$
+                  (\texttt{scipy.optimize.minimize\_scalar});
+            \item inner: for each $\varepsilon$, solve the linear problem for
+                  $\bm{w}$ and return the error.
+          \end{itemize}
+  \end{itemize}
+  \textbf{Tasks}
+  \begin{enumerate}
+    \item Use the greedy centers of Example~2. Plot SSE on the data
+          vs.\ $\varepsilon \in [0.5, 10]$.
+    \item Plot also the LOOCV error and the RMSE vs.\ the true $f$.
+    \item Find the optimal $\varepsilon$ for each curve. Do they agree? Why?
+    \item Plot $\operatorname{cond}(A)$ vs.\ $\varepsilon$. What happens for
+          small $\varepsilon$?
+    \item \emph{Bonus:} alternate center selection and $\varepsilon$
+          optimization. Does the set of centers change?
+  \end{enumerate}
+\end{frame}
+
+% =====================================================================
+\section{Summary}
+% =====================================================================
+
+\begin{frame}{Take-home messages}
+  \begin{itemize}
+    \item RBF approximation: $m < n$ terms, coefficients by
+          \hl{least squares}. Only distances are needed: works for
+          scattered data in any dimension.
+    \item The \hl{polynomial augmentation} captures smooth trends; the
+          orthogonality condition is necessary for interpolation, optional
+          for approximation.
+    \item \hl{Where} the centers are matters: greedy selection reaches the
+          same accuracy with far fewer centers than random selection.
+    \item More centers always reduce the error on the data, but not the true
+          error: beware of \hl{overfitting}. Use the noise level or
+          validation to decide when to stop.
+    \item Next: the shape parameter $\varepsilon$, which also matters.
+  \end{itemize}
+  \vspace{0.5em}
+  \small Code: \texttt{example01\_rbf\_mq\_slsqp.py},
+  \texttt{example02\_rbf\_greedy\_centers.py}
+\end{frame}
+
+\end{document}
