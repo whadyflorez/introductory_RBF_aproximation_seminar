@@ -1,0 +1,10 @@
+\beamer@sectionintoc {1}{The problem}{5}{0}{1}
+\beamer@sectionintoc {2}{The RBF model}{8}{0}{2}
+\beamer@sectionintoc {3}{Example 1: random centers}{13}{0}{3}
+\beamer@sectionintoc {4}{Example 2: greedy selection of centers}{21}{0}{4}
+\beamer@sectionintoc {5}{Example 3: stochastic gradient methods}{36}{0}{5}
+\beamer@sectionintoc {6}{Example 4: subsampled Newton (stochastic Gauss-Newton)}{48}{0}{6}
+\beamer@sectionintoc {7}{Example 5: recursive least squares (Sherman-Morrison)}{60}{0}{7}
+\beamer@sectionintoc {8}{RBF and neural networks}{69}{0}{8}
+\beamer@sectionintoc {9}{Exercise: optimizing the shape parameter}{72}{0}{9}
+\beamer@sectionintoc {10}{Summary}{74}{0}{10}

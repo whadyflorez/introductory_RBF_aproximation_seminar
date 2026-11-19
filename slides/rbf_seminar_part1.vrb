@@ -1,0 +1,21 @@
+\frametitle{Design decision 2: a fast solver for the trial fits}
+\begin{itemize}
+    \item The greedy loop needs \hl{thousands} of least-squares fits
+          (here $\approx 7000$).
+    \item SLSQP is iterative ($\sim$250 iterations per fit): far too slow.
+    \item \texttt{scipy.linalg.lstsq} solves each fit \hl{directly}
+          (SVD), in one step.
+    \item Trick: every candidate is a data point, so we compute
+          \emph{once} the $n\times n$ matrix
+          $\Phi_{\text{all}}[i,j] = \phi(\lVert \x_i - \x_j\rVert)$ and just
+          pick columns.
+  \end{itemize}
+\begin{lstlisting}
+Phi_all = multiquadric(distances(X, X), EPS)     # n x n, computed once
+
+def ls_fit(idx):
+    A = np.hstack([Phi_all[:, idx], P_data])     # n x (k+6)
+    w, *_ = lstsq(A, y)
+    r = A @ w - y
+    return w, r @ r                              # coefficients, SSE
+\end{lstlisting}

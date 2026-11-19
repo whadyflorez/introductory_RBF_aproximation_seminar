@@ -14,6 +14,7 @@
 \usepackage{graphicx}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.16}
+\usetikzlibrary{arrows.meta}
 \usepackage{listings}
 \usepackage[ruled,linesnumbered]{algorithm2e}
 \usepackage{xcolor}
@@ -51,8 +52,58 @@
 
 \maketitle
 
+\begin{frame}{Point of view: two ways to approximate data}
+  \centering
+  \begin{tikzpicture}[
+      box/.style={draw, rounded corners=3pt, align=center, minimum height=1.55cm,
+                  text width=2.85cm, font=\scriptsize, inner sep=3pt},
+      ours/.style={box, fill=accent!12, draw=accent!80!black, thick},
+      theirs/.style={box, fill=gray!12, draw=gray!70!black},
+      arr/.style={-{Latex[length=2.2mm]}, very thick},
+      lane/.style={font=\small\bfseries, anchor=west}]
+    % ---- lane 1: this seminar -----------------------------------------
+    \node[lane, text=accent!80!black] at (-1.6, 2.15)
+      {This seminar: from mathematics to approximation};
+    \node[ours] (m1) at (0,1)    {\textbf{Mathematics}\\approximation theory,\\conditioning,\\convergence};
+    \node[ours] (m2) at (3.4,1)  {\textbf{Model}\\built from the theory\\(RBF, least squares)};
+    \node[ours] (m3) at (6.8,1)  {\textbf{Algorithm}\\from the structure\\(direct, Gauss-Newton,\\RLS)};
+    \node[ours] (m4) at (10.2,1) {\textbf{Approximation}\\with guarantees\\and error estimates};
+    \draw[arr, accent!80!black] (m1) -- (m2);
+    \draw[arr, accent!80!black] (m2) -- (m3);
+    \draw[arr, accent!80!black] (m3) -- (m4);
+    % ---- lane 2: frequent practice ------------------------------------
+    \node[lane, text=gray!40!black] at (-1.6, -0.75)
+      {Frequent practice in data science: from computation to mathematics};
+    \node[theirs] (c1) at (0,-1.9)    {\textbf{Computation}\\frameworks, GPUs,\\large data};
+    \node[theirs] (c2) at (3.4,-1.9)  {\textbf{Empirical design}\\architecture,\\hyperparameters,\\trial and error};
+    \node[theirs] (c3) at (6.8,-1.9)  {\textbf{It works}\\on test data};
+    \node[theirs] (c4) at (10.2,-1.9) {\textbf{Mathematics afterwards}\\explain \emph{why}\\it works};
+    \draw[arr, gray!60!black] (c1) -- (c2);
+    \draw[arr, gray!60!black] (c2) -- (c3);
+    \draw[arr, gray!60!black] (c3) -- (c4);
+    % ---- the analogy ---------------------------------------------------
+    \node[font=\footnotesize, align=center, text width=13cm] at (5.1,-3.45)
+      {\emph{Analogy:} building a machine empirically, tuning it until it runs,
+       and only then explaining with physics why it works.\\
+       Here we go the other way: the theory tells us what to build and how
+       to compute it.};
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}
+\centering
+\includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio]{irony.jpg}
+\end{frame}
+
 \begin{frame}{Outline}
-  \tableofcontents
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \tableofcontents[sections={1-5}]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \tableofcontents[sections={6-10}]
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % =====================================================================
@@ -684,6 +735,802 @@ def ls_fit(idx):
 \end{frame}
 
 % =====================================================================
+\section{Example 3: stochastic gradient methods}
+% =====================================================================
+
+\begin{frame}{How Machine Learning would solve this problem}
+  In Machine Learning (ML) the usual tools are different:
+  \begin{itemize}
+    \item \hl{No constraints}: everything goes into one loss function.
+    \item \hl{Stochastic gradient} methods: cheap steps that use only a small
+          random part of the data. They scale to millions of data points.
+    \item Speed is often preferred over an accurate minimization.
+  \end{itemize}
+  \vspace{0.5em}
+  \textbf{Example 3} solves exactly the problem of Example 1 (same data,
+  same 30 random centers, $\varepsilon=3$, quadratic polynomial) in that way:
+  \begin{enumerate}[(a)]
+    \item the orthogonality conditions become extra equations of the system;
+    \item the loss is minimized with SGD, SGD with momentum and Adam.
+  \end{enumerate}
+  \vspace{0.5em}
+  \begin{alertblock}{Question}
+    How close do these methods get to the true minimum?
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{(a) The orthogonality conditions as extra equations}
+  Append the 6 conditions $P_c^T\bm{a}=\bm{0}$, multiplied by a weight
+  $\lambda$, below the collocation system:
+  \[
+    \underbrace{\begin{bmatrix} \Phi & P \\ \lambda P_c^T & 0 \end{bmatrix}}_{A_{\text{aug}}\;((n+6)\times p)}
+    \begin{bmatrix} \bm{a} \\ \bm{b} \end{bmatrix}
+    \approx
+    \underbrace{\begin{bmatrix} \bm{y} \\ \bm{0} \end{bmatrix}}_{\bm{y}_{\text{aug}}}
+  \]
+  One unconstrained least-squares problem:
+  \[
+    L(\bm{w}) = \tfrac12 \lVert A_{\text{aug}}\bm{w} - \bm{y}_{\text{aug}} \rVert^2
+    = \tfrac12 \sum_{i=1}^{n} \big(s(\x_i) - y_i\big)^2
+      + \tfrac12 \lambda^2 \lVert P_c^T \bm{a} \rVert^2
+  \]
+  \begin{itemize}
+    \item The constraint is now satisfied only \emph{approximately}: it
+          competes with the data. A larger $\lambda$ enforces it more.
+    \item We use $\lambda = 1$. The exact minimum of $L$ is computed with
+          \texttt{lstsq} as a reference.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Gradient descent: walking downhill}
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      $L(\bm{w})$ is a quadratic function: its graph is a \hl{valley}
+      (a paraboloid). The minimum is at the bottom.
+      \vspace{0.5em}
+
+      \textbf{Gradient descent:} take steps in the downhill direction
+      \[
+        \bm{w} \leftarrow \bm{w} - \alpha\, \nabla L(\bm{w})
+      \]
+      $\alpha$ is the step size (\emph{learning rate}).
+      \vspace{0.5em}
+
+      For our problem the gradient is
+      \[
+        \nabla L = A^T(A\bm{w} - \bm{y})
+        = \sum_{i=1}^{n} \bm{a}_i \big(\bm{a}_i^T \bm{w} - y_i\big)
+      \]
+      where $\bm{a}_i^T$ is row $i$ of $A$.
+      \hl{The gradient is a sum over the data.}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=1.1]
+        \foreach \r in {0.3,0.6,0.9,1.2,1.5} \draw[gray] (0,0) circle (\r);
+        \draw[->,gray] (-1.7,0) -- (1.8,0) node[right] {\scriptsize $w_1$};
+        \draw[->,gray] (0,-1.7) -- (0,1.8) node[above] {\scriptsize $w_2$};
+        \draw[accent,very thick,->] (1.1,0.9) -- (0.77,0.63) -- (0.54,0.44) -- (0.38,0.31) -- (0.06,0.05);
+        \fill[accent] (1.1,0.9) circle (1.5pt);
+        \fill (0,0) circle (1.5pt);
+      \end{tikzpicture}
+
+      {\scriptsize A round valley: each step points to the minimum.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Stochastic gradient: estimate the sum with a sample}
+  If $n$ is huge, computing the full sum at every step is expensive.
+  \textbf{Idea:} estimate it from a small random sample, like an opinion
+  poll estimates the opinion of a whole country.
+  \vspace{0.3em}
+  \begin{itemize}
+    \item Choose a random \hl{mini-batch} $B$ of data indices, e.g.\ $|B| = 20$.
+    \item Estimate the gradient with those rows only:
+          \[
+            \bm{g}_B = \frac{n}{|B|} \sum_{i \in B} \bm{a}_i \big(\bm{a}_i^T \bm{w} - y_i\big)
+            \qquad (\text{the factor } n/|B| \text{ turns the sample average into a full sum})
+          \]
+    \item Step: $\bm{w} \leftarrow \bm{w} - \alpha\, \bm{g}_B$.
+          Cost per step: $|B|$ rows, \hl{independent of $n$}.
+    \item \textbf{Epoch:} one pass over the data ($n/|B| = 10$ steps here).
+          Each epoch the data are shuffled.
+    \item The 6 constraint rows are always included in $\bm{g}_B$.
+  \end{itemize}
+  \vspace{0.3em}
+  \small The estimate is \emph{noisy}: each step points only roughly downhill.
+\end{frame}
+
+\begin{frame}{Accelerated variants: momentum and Adam}
+  \textbf{SGD with momentum} (``heavy ball''): average the recent gradients
+  \[
+    \bm{m} \leftarrow \beta\,\bm{m} + \bm{g}_B, \qquad
+    \bm{w} \leftarrow \bm{w} - \alpha\,\bm{m}, \qquad \beta = 0.9
+  \]
+  The noise partly cancels, and the method keeps moving along consistent
+  directions.
+  \vspace{0.5em}
+
+  \textbf{Adam} (the standard in ML): a separate step size for every
+  coordinate
+  \[
+    \bm{m} \leftarrow 0.9\,\bm{m} + 0.1\,\bm{g}_B, \qquad
+    \bm{s} \leftarrow 0.999\,\bm{s} + 0.001\,\bm{g}_B^2, \qquad
+    w_j \leftarrow w_j - \alpha\, \frac{m_j}{\sqrt{s_j} + 10^{-8}}
+  \]
+  (with a small bias correction of $\bm{m}$ and $\bm{s}$ in the first steps).
+  Coordinates with large gradients get smaller steps.
+  \vspace{0.5em}
+
+  All three use only \hl{gradients}: they are \hl{first-order} methods.
+\end{frame}
+
+\begin{frame}{Preprocessing the columns of $A$}
+  ML practitioners always normalize the features (the columns of $A$).
+  We try three options, each a change of variables $\bm{w} = T\bm{v}$
+  (we optimize $\bm{v}$, then recover $\bm{w}$):
+  \vspace{0.3em}
+  \begin{center}
+  \begin{tabular}{llc}
+    \toprule
+    Option & What it does & $\operatorname{cond}(A_{\text{aug}}T)$ \\
+    \midrule
+    raw & nothing & $2.2\times10^{6}$ \\
+    scaled & each column divided by its norm & $2.5\times10^{6}$ \\
+    standardized & RBF columns: mean 0, standard deviation 1 & $5.1\times10^{5}$ \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \begin{itemize}
+    \item Scaling does \hl{not} help: the columns already have similar sizes.
+          The problem is that MQ columns are \hl{almost collinear}.
+    \item Standardizing removes their common part (the mean, absorbed by the
+          constant polynomial term) and improves the conditioning
+          $\approx 4$ times.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example 3: results after 100\,000 iterations}
+  \centering\small
+  \begin{tabular}{lcccc}
+    \toprule
+    Solution & $L/L_{\min}$ & RMSE vs.\ $f$ & $\lVert\bm{w}\rVert$ & time \\
+    \midrule
+    \texttt{lstsq} (exact minimum) & 1.00 & 0.027 & 608 & 0.001\,s \\
+    Example 1 (SLSQP, exact constraint) & 1.01 & 0.027 & 704 & 0.02\,s \\
+    \midrule
+    SGD, raw & 11.8 & 0.097 & 1.2 & 1.2\,s \\
+    SGD, scaled & 11.4 & 0.095 & 1.8 & 1.2\,s \\
+    SGD + momentum, standardized & 4.4 & 0.061 & 4.4 & 1.2\,s \\
+    Adam, raw & 8.5 & 0.081 & 4.9 & 1.9\,s \\
+    \hl{Adam, standardized} (best) & \hl{3.3} & \hl{0.049} & 11.5 & 2.1\,s \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \raggedright
+  \begin{itemize}
+    \item \hl{No} stochastic method reaches the minimum. The best one ends
+          3 times above it, with almost twice the true error.
+    \item On this small problem the exact solver is also much faster.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example 3: the loss during training}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 359 458 0,clip]{example03_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Loss $L(\bm{w})$ vs.\ epochs, standardized columns (log scales).
+        \item Dashed line: the exact minimum.
+        \item SGD and momentum: slow, steady decrease.
+        \item Adam: faster at first, but it \hl{oscillates} (constant step size).
+        \item After 10\,000 epochs all of them are still far from the minimum.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 3: what the student sees}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=478 0 0 361,clip]{example03_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Cut of the models along $x_2 = 0.25$.
+        \item Red dashed: exact minimum. Green: best stochastic model (Adam).
+        \item The difference is visible: Adam misses the peaks.
+        \item A poor minimization gives a poorer approximation.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Why do gradient methods fail here?}
+  \begin{columns}[c]
+    \begin{column}{0.58\textwidth}
+      Our valley is \hl{extremely elongated}. A 2D example:
+      \[
+        L = \tfrac12\big(1000\,w_1^2 + w_2^2\big)
+      \]
+      \begin{itemize}
+        \item Direction $w_1$ is steep: a step $\alpha > 2/1000$ bounces from
+              wall to wall and diverges. So $\alpha \approx 0.001$.
+        \item Direction $w_2$ is almost flat: with $\alpha=0.001$ each step
+              advances only $0.1\%$ of the remaining distance.
+      \end{itemize}
+      \vspace{0.3em}
+      In our problem the ratio is not 1000 but
+      $\kappa = \operatorname{cond}(A^TA) \approx 10^{13}$.
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=1.1]
+        \foreach \r in {0.4,0.8,1.2,1.6,2.0} \draw[gray] (0,0) ellipse ({0.3*\r} and {\r});
+        \draw[->,gray] (-0.9,0) -- (0.9,0) node[right] {\scriptsize $w_1$};
+        \draw[->,gray] (0,-2.2) -- (0,2.3) node[above] {\scriptsize $w_2$};
+        \draw[accent,very thick] (0.33,1.6) -- (-0.3,1.52) -- (0.27,1.44) -- (-0.24,1.36) -- (0.21,1.28) -- (-0.18,1.2) -- (0.15,1.12);
+        \fill[accent] (0.33,1.6) circle (1.5pt);
+        \fill (0,0) circle (1.5pt);
+      \end{tikzpicture}
+
+      {\scriptsize Zig-zag across the valley, slow progress along it.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{This is a theorem, not a tuning problem}
+  \begin{block}{Lower bound for first-order methods (Nesterov)}
+    For quadratic functions, no method that only combines gradients can
+    converge, in the worst case, faster than about
+    \[
+      \sqrt{\kappa}\;\log(1/\text{tol}) \quad \text{iterations.}
+    \]
+  \end{block}
+  \begin{itemize}
+    \item Here $\sqrt{\kappa} \approx 3\times10^{6}$. Momentum and Adam improve
+          the constant, but cannot beat the bound.
+    \item The exact solution has large coefficients that cancel each other
+          ($\lVert\bm{w}^\ast\rVert \approx 600$). They live in the
+          \hl{flat directions} of the valley, which gradient steps starting
+          from $\bm{w}=\bm{0}$ explore extremely slowly
+          ($\lVert\bm{w}\rVert \le 12$ after 100\,000 steps).
+    \item Stopping early does \hl{not} help: the true error never gets
+          below that of the exact minimum.
+  \end{itemize}
+  \vspace{0.3em}
+  \begin{alertblock}{Message}
+    Scalability does not replace mathematics. To beat the bound we need
+    \hl{curvature} information: second-order methods.
+  \end{alertblock}
+\end{frame}
+
+% =====================================================================
+\section{Example 4: subsampled Newton (stochastic Gauss-Newton)}
+% =====================================================================
+
+\begin{frame}{Newton's idea: use the curvature}
+  Newton uses the slope (gradient $\bm{g}$) \emph{and} the curvature
+  (Hessian $H$). It builds a parabola that approximates $L$ and jumps to its
+  minimum:
+  \[
+    H\,\bm{d} = -\bm{g}, \qquad \bm{w} \leftarrow \bm{w} + \bm{d}
+  \]
+  \textbf{2D example:} $L = \frac12(1000\,w_1^2 + w_2^2)$
+  \[
+    \bm{g} = \begin{bmatrix} 1000\,w_1 \\ w_2 \end{bmatrix}, \quad
+    H = \begin{bmatrix} 1000 & 0 \\ 0 & 1 \end{bmatrix}
+    \quad\Rightarrow\quad
+    \bm{d} = -\begin{bmatrix} w_1 \\ w_2 \end{bmatrix}
+  \]
+  \hl{One step reaches the minimum $(0,0)$}, whatever the elongation.
+  \vspace{0.5em}
+
+  Newton divides each direction by its own curvature: it turns the
+  elongated valley into a \hl{round bowl}.
+\end{frame}
+
+\begin{frame}{Newton = Gauss-Newton for our problem}
+  For $L(\bm{w}) = \frac12\lVert A\bm{w} - \bm{y}\rVert^2$:
+  \[
+    \bm{g} = A^T(A\bm{w} - \bm{y}), \qquad H = A^TA
+  \]
+  \begin{itemize}
+    \item $L$ is exactly quadratic, so \hl{one} Newton step with all the data
+          gives the exact least-squares solution.
+    \item In \emph{nonlinear} least squares, Gauss-Newton uses $J^TJ$ as the
+          Hessian ($J$ = Jacobian of the residuals). Here $J = A$, so
+          Gauss-Newton and Newton coincide.
+  \end{itemize}
+  \vspace{0.5em}
+  \textbf{The scale problem:} both $\bm{g}$ and $H$ are \hl{sums over the
+  data}
+  \[
+    \bm{g} = \sum_{i=1}^{n} \bm{a}_i\big(\bm{a}_i^T\bm{w} - y_i\big), \qquad
+    H = \sum_{i=1}^{n} \bm{a}_i\bm{a}_i^T
+  \]
+  With millions of data, computing them at every step is expensive
+  \;$\Rightarrow$\; estimate \hl{both} with samples.
+\end{frame}
+
+\begin{frame}{Subsampled (stochastic) Gauss-Newton}
+  At every iteration, two random sets of \hl{data indices}:
+  \begin{itemize}
+    \item $B$ ($|B| = 20$ data) for the gradient:
+          \;$\displaystyle \bm{g}_B = \frac{n}{|B|}\, A_B^T\big(A_B\bm{w} - \bm{y}_B\big)$
+    \item $B_H$ ($|B_H| = 150$ data) for the Hessian:
+          \;$\displaystyle H_B = \frac{n}{|B_H|}\, A_{B_H}^T A_{B_H}$
+  \end{itemize}
+  $A_B$ is the matrix $A$ keeping \emph{only the rows in $B$}.
+  The 6 constraint rows are always included.
+  \vspace{0.5em}
+
+  Then solve the small system
+  \[
+    \big(H_B + \mu I\big)\,\bm{d} = -\bm{g}_B, \qquad
+    \bm{w} \leftarrow \bm{w} + \alpha_k\,\bm{d}
+  \]
+  ($\mu$ and $\alpha_k$ are explained in a moment).
+\end{frame}
+
+\begin{frame}{What is sampled? Data, never unknowns}
+  \begin{columns}[T]
+    \begin{column}{0.44\textwidth}
+      \small
+      \begin{tabular}{lll}
+        \toprule
+        Symbol & Meaning & Value \\
+        \midrule
+        $n$ & data (rows of $A$) & 200 \\
+        $m$ & RBF centers & 30 \\
+        $p$ & unknowns $= m + 6$ & 36 \\
+            & (columns of $A$) & \\
+        $B$ & data for $\bm{g}$ & 20 \\
+        $B_H$ & data for $H$ & 150 \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+    \begin{column}{0.54\textwidth}
+      \textbf{Sizes:}
+      \begin{itemize}
+        \item $A_B$: $20\times36$, \;$A_{B_H}$: $150\times36$
+        \item $\bm{g}_B = A_B^T(\cdots)$: \;$(36\times20)(20\times1) = $ \hl{$36\times1$}
+        \item $H_B = A_{B_H}^TA_{B_H}$: \;$(36\times150)(150\times36) = $ \hl{$36\times36$}
+      \end{itemize}
+      \vspace{0.3em}
+      The gradient always has $p = 36$ components, and the Hessian is always
+      $36\times36$, whether we use 20, 150 or a million rows.
+    \end{column}
+  \end{columns}
+  \vspace{0.8em}
+  \begin{itemize}
+    \item The number of sampled rows is ``absorbed'' by the product.
+    \item The step $\bm{d}$ updates \hl{all} 36 coefficients at once.
+    \item Sampling \emph{unknowns} (columns) instead is a different method:
+          (block) coordinate descent.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{A tiny example: 5 equations, 2 unknowns}
+  Fit a straight line $s(x) = b_0 + b_1 x$ to 5 points $x = 0,1,2,3,4$:
+  \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+      \[
+        A = \begin{bmatrix} 1&0\\1&1\\1&2\\1&3\\1&4 \end{bmatrix} (5\times2)
+      \]
+      \[
+        H = A^TA = \begin{bmatrix} 5 & 10 \\ 10 & 30 \end{bmatrix} (2\times2)
+      \]
+    \end{column}
+    \begin{column}{0.52\textwidth}
+      Sample $B_H = \{1, 4, 5\}$:
+      \[
+        A_{B_H} = \begin{bmatrix} 1&0\\1&3\\1&4 \end{bmatrix} (3\times2)
+      \]
+      \[
+        H_B = \tfrac{5}{3}A_{B_H}^TA_{B_H}
+            = \tfrac{5}{3}\begin{bmatrix} 3 & 7 \\ 7 & 25 \end{bmatrix}
+            \approx \begin{bmatrix} 5 & 11.7 \\ 11.7 & 41.7 \end{bmatrix}
+      \]
+    \end{column}
+  \end{columns}
+  \begin{itemize}
+    \item $H_B$ is $2\times2$, like $H$: the \emph{same} matrix, estimated
+          with 3 data instead of 5.
+    \item One row only, e.g.\ row 4: $\bm{a}\bm{a}^T =
+          \left[\begin{smallmatrix} 1&3\\3&9\end{smallmatrix}\right]$,
+          $\det = 0$: \hl{singular}. Each row adds a rank-1 matrix, so we need
+          at least $p$ rows.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Three dangers, three remedies}
+  \textbf{1. $H_B$ may be singular.} It is a sum of $|B_H|$ rank-1 matrices.
+  \;$\to$\; \hl{$|B_H|$ well above $p$} (we use 150).
+  \vspace{0.6em}
+
+  \textbf{2. The sample misjudges the flat directions.} Their curvature is
+  tiny and a sample can underestimate it further. The step divides by that
+  curvature, so $\bm{d}$ explodes.
+  \;$\to$\; Larger $|B_H|$, and \hl{Levenberg-Marquardt damping}:
+  \[
+    (H_B + \mu I)\,\bm{d} = -\bm{g}_B: \qquad
+    \mu \to 0: \text{Newton}, \qquad
+    \mu \text{ large}: \bm{d} \approx -\bm{g}_B/\mu \text{ (cautious gradient step)}
+  \]
+  Damping also protects against round-off ($A^TA$ squares the condition
+  number).
+  \vspace{0.6em}
+
+  \textbf{3. $H_B^{-1}$ amplifies the noise of $\bm{g}_B$} in the flat
+  directions. \;$\to$\; \hl{Decreasing step}
+  $\alpha_k = 1/(1 + k/10)$: large steps first, then the noise of successive
+  steps averages out.
+\end{frame}
+
+\begin{frame}{The algorithm}
+  \begin{columns}[c]
+    \begin{column}{0.62\textwidth}
+      \footnotesize
+      \begin{algorithm}[H]
+        \caption{Stochastic Gauss-Newton}
+        $\bm{w} \leftarrow \bm{0}$\;
+        \For{$k = 0, 1, 2, \dots$}{
+          $B \leftarrow$ 20 random data,\quad $B_H \leftarrow$ 150 random data\;
+          $\bm{g} \leftarrow \frac{n}{20} A_B^T(A_B\bm{w}-\bm{y}_B)$ + constraint rows\;
+          $H \leftarrow \frac{n}{150} A_{B_H}^TA_{B_H}$ + constraint rows\;
+          solve $(H + \mu I)\,\bm{d} = -\bm{g}$ \tcp*{$36\times36$}
+          $\bm{w} \leftarrow \bm{w} + \bm{d}/(1 + k/10)$\;
+        }
+      \end{algorithm}
+    \end{column}
+    \begin{column}{0.35\textwidth}
+      \begin{itemize}
+        \item $\mu = 10^{-4}$.
+        \item 1000 iterations, 5 random seeds.
+        \item Cost measured as \hl{rows of $A$ processed}: the measure that
+              matters when $n$ is huge.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 4: results}
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Method & $L/L_{\min}$ & RMSE vs.\ $f$ & rows processed \\
+    \midrule
+    \texttt{lstsq} (exact) & 1.00 & 0.027 & 206 \\
+    Adam, standardized (Example 3) & 3.25 & 0.049 & $2.6\times10^{6}$ \\
+    Gauss-Newton, naive ($|B_H|=60$, $\alpha=1$) & \hl{diverges} & -- & -- \\
+    \hl{Gauss-Newton, robust} (median of 5) & \hl{1.04} & \hl{0.027} & $1.8\times10^{5}$ \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \raggedright
+  \begin{itemize}
+    \item The robust version reaches the exact solution for every seed, with
+          $\approx 15$ times less work than Adam (which never gets there).
+    \item It gets below $1.10\,L_{\min}$ after 72 to 448 iterations,
+          depending on the seed.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example 4: loss vs.\ work}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 359 467 0,clip]{example04_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Horizontal axis: rows of $A$ processed (log scale).
+        \item Blue: robust Gauss-Newton, 5 seeds. Green: Adam.
+        \item Red (top): naive Gauss-Newton, diverging after a few iterations.
+        \item Second order reaches the minimum; first order stalls far above it.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 4: how large must the Hessian sample be?}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 0 467 361,clip]{example04_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Final $L/L_{\min}$ after 1000 iterations vs.\ $|B_H|$ (5 seeds).
+        \item $|B_H| \le 60$: diverges. $80$--$100$: depends on the seed.
+        \item $|B_H| \ge 125$: robust.
+        \item The threshold is well above $p = 36$: the flat directions need many rows to be seen correctly.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 4: observations}
+  \begin{itemize}
+    \item \textbf{Curvature breaks the barrier.} Second-order steps are more
+          expensive, but hundreds of them replace millions of gradient steps.
+    \item \textbf{But it is not free.} The naive version diverges. Robustness
+          needs a large enough Hessian sample, damping $\mu$ and a decreasing
+          step.
+    \item \textbf{An honest caveat.} Here the robust Hessian sample is $75\%$
+          of the data, almost the full Hessian. Theory says the needed sample
+          size depends on $p$ and on how the information is spread among the
+          rows, \emph{not} on $n$. With millions of data it would be a tiny
+          fraction, but this small example cannot show that.
+  \end{itemize}
+  \vspace{0.5em}
+  \begin{alertblock}{Question}
+    Can we use curvature with mini-batches \emph{smaller} than $p$, even of
+    size one?
+  \end{alertblock}
+\end{frame}
+
+% =====================================================================
+\section{Example 5: recursive least squares (Sherman-Morrison)}
+% =====================================================================
+
+\begin{frame}{Accumulate the curvature one row at a time}
+  To know the curvature in all $p$ directions we need the information of at
+  least $p$ independent rows. But it does not have to arrive \hl{in the
+  same iteration}: it can be \hl{accumulated}.
+  \vspace{0.5em}
+
+  Process the rows one by one, $\bm{a}_1, \bm{a}_2, \dots$, and keep
+  \[
+    P_k = \big(\delta I + \bm{a}_1\bm{a}_1^T + \cdots + \bm{a}_k\bm{a}_k^T\big)^{-1}
+    \qquad (p\times p)
+  \]
+  \[
+    \bm{w}_k = \text{least-squares solution using the first } k \text{ rows}
+  \]
+  \begin{itemize}
+    \item $P_k$ is the inverse Hessian of all the data seen so far.
+    \item $P_k$ is \hl{always $p\times p$}: it never grows. Each new row only
+          corrects it.
+    \item After using a row we can discard it.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The Sherman-Morrison formula}
+  Adding a row $\bm{a}$ changes the matrix by a rank-1 term $\bm{a}\bm{a}^T$.
+  Its inverse can be updated \hl{without inverting anything}:
+  \[
+    \big(M + \bm{a}\bm{a}^T\big)^{-1}
+    = M^{-1} - \frac{\big(M^{-1}\bm{a}\big)\big(\bm{a}^TM^{-1}\big)}
+                    {1 + \bm{a}^TM^{-1}\bm{a}}
+  \]
+  This gives the \hl{recursive least squares} (RLS) update for a new datum
+  $(\bm{a}_i, y_i)$:
+  \begin{block}{RLS step, cost $O(p^2)$}
+    \vspace{-0.8em}
+    \begin{align*}
+      \bm{k} &= \frac{P\bm{a}_i}{1 + \bm{a}_i^TP\bm{a}_i}
+             && \text{(gain vector)} \\
+      \bm{w} &\leftarrow \bm{w} + \bm{k}\,\big(y_i - \bm{a}_i^T\bm{w}\big)
+             && \text{(correct with the new residual)} \\
+      P &\leftarrow P - \bm{k}\,\big(P\bm{a}_i\big)^T
+             && \text{(Sherman-Morrison)}
+    \end{align*}
+  \end{block}
+  A second-order method with mini-batches of size \hl{one}. It is the linear
+  case of the Kalman filter.
+\end{frame}
+
+\begin{frame}{Practical questions}
+  \begin{itemize}
+    \item \textbf{How to start?} With fewer than $p$ rows,
+          $\sum \bm{a}_i\bm{a}_i^T$ is not invertible. Start with
+          $P_0 = I/\delta$, $\delta$ very small (a tiny regularization).
+    \item \textbf{When does it end?} After \hl{one pass over all $n$ rows},
+          $\bm{w}$ is the solution of
+          \[
+            \big(A^TA + \delta I\big)\,\bm{w} = A^T\bm{y}
+          \]
+          i.e.\ least squares with a tiny ridge regularization.
+    \item \textbf{All $n$ rows, not just $p$.} With only the first $p$ rows we
+          would just fit those $p$ data. $p$ rows is the minimum to make $P$
+          well defined; the full approximation needs all $n$.
+    \item \textbf{Does the order matter?} Not for the final result: a sum does
+          not depend on the order of its terms. It does change the
+          intermediate models.
+    \item \textbf{Streaming data:} a forgetting factor $0<\lambda_f<1$
+          discounts old data; the model ``remembers'' the last
+          $\approx 1/(1-\lambda_f)$ rows.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example 5: results}
+  Same problem as Examples 3 and 4, $\delta = 10^{-10}$, one pass.
+  \vspace{0.5em}
+
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Method & $L/L_{\min}$ & RMSE vs.\ $f$ & rows processed \\
+    \midrule
+    \texttt{lstsq} (exact) & 1.000000 & 0.0265 & 206 \\
+    \hl{RLS}, rows sorted by $x_1$ & \hl{1.000006} & 0.0265 & \hl{206} \\
+    \hl{RLS}, random order & \hl{1.000006} & 0.0265 & \hl{206} \\
+    \midrule
+    Stochastic Gauss-Newton (Example 4) & 1.04 & 0.027 & $1.8\times10^{5}$ \\
+    Adam, standardized (Example 3) & 3.25 & 0.049 & $2.6\times10^{6}$ \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \raggedright
+  \begin{itemize}
+    \item One pass, one row at a time, and the \hl{exact} answer.
+    \item Sorted and random order give the same final $\bm{w}$ (difference
+          $\approx 10^{-4}$, round-off).
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Example 5: the model built row by row}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=466 0 0 361,clip]{example05_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Rows sorted by $x_1$: the data enter from left to right.
+        \item Cut along $x_2 = 0.25$ after 50, 100, 150 and 200 data rows.
+        \item The model is good where data have been seen, and wild where they have not.
+        \item After all rows: the exact least-squares model.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 5: the loss during one pass}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 359 470 0,clip]{example05_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Loss on \emph{all} data while the rows are being processed.
+        \item Sorted order: very large intermediate errors (unseen regions).
+        \item Random order: intermediate models are representative much earlier.
+        \item Both end exactly at the minimum.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Example 5: choosing $\delta$}
+  \begin{columns}[c]
+    \begin{column}{0.56\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,height=0.80\textheight,keepaspectratio,trim=0 0 470 361,clip]{example05_results.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{itemize}
+        \item Large $\delta$: regularization bias (excess loss).
+        \item Tiny $\delta$: round-off error grows. RLS works with $A^TA$, whose condition number is $\operatorname{cond}(A)^2 \approx 5\times10^{12}$.
+        \item Best compromise here: $\delta \approx 10^{-10}$.
+        \item Robust variants exist (QR-based, square-root RLS).
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Comparing the five ways of computing the coefficients}
+  \centering\small
+  \begin{tabular}{llcccc}
+    \toprule
+    Ex. & Method & Order & Batch & Rows processed & $L/L_{\min}$ \\
+    \midrule
+    1 & SLSQP, exact constraint & quasi-Newton & all & -- & 1.01 \\
+    3 & SGD / momentum / Adam & 1st & 20 & $2.6\times10^{6}$ & $\ge 3.3$ \\
+    4 & Stochastic Gauss-Newton & 2nd & 20 / 150 & $1.8\times10^{5}$ & 1.04 \\
+    5 & RLS (Sherman-Morrison) & 2nd & 1 & 206 & 1.000006 \\
+    -- & \texttt{lstsq} (SVD) & direct & all & 206 & 1 \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \raggedright
+  \begin{itemize}
+    \item Small batches and scalability do not require giving up the
+          mathematics: RLS processes one datum at a time and is exact.
+    \item The real limit is the \hl{conditioning}: it slows down first-order
+          methods, and forces care (damping, $\delta$, round-off) in
+          second-order ones.
+  \end{itemize}
+\end{frame}
+
+% =====================================================================
+\section{RBF and neural networks}
+% =====================================================================
+
+\begin{frame}{Universal approximators}
+  \begin{block}{Definition}
+    A family of functions $\mathcal{F}$ is a \textbf{universal approximator}
+    on a compact set $K\subset\R^d$ if, for every continuous $f$ and every
+    $\epsilon>0$, there is $s\in\mathcal{F}$ with
+    \[
+      \max_{\x\in K} |f(\x) - s(\x)| < \epsilon .
+    \]
+  \end{block}
+  \begin{itemize}
+    \item \textbf{Multilayer neural networks:} already one hidden layer with a
+          non-polynomial activation is enough (Cybenko 1989; Hornik et al.\
+          1989; Leshno et al.\ 1993).
+    \item \textbf{RBF:} $\sum_j a_j\phi(\lVert\x-\cc_j\rVert)$ is a universal
+          approximator too (Park \& Sandberg 1991). An RBF model \emph{is} a
+          one-hidden-layer network with a radial activation.
+    \item \hl{Existence only}: the theorems say nothing about how many terms
+          are needed, how to compute the coefficients, or how accurate the
+          derivatives are.
+  \end{itemize}
+  \vspace{0.3em}
+  \begin{alertblock}{So the real question is}
+    Which family gives an accurate, reliable and computable approximation
+    for a given problem?
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Why and where RBF are preferable}
+  \footnotesize
+  \begin{columns}[T]
+    \begin{column}{0.49\textwidth}
+      \textbf{Advantages}
+      \begin{itemize}
+        \item \hl{Linear in the coefficients} ($\varepsilon$, centers fixed):
+              convex, unique global minimum, robust solvers. Networks are
+              non-convex (local minima).
+        \item \hl{Meshless}: only distances, scattered points, any geometry
+              and dimension.
+        \item \hl{Accurate derivatives and differential operators}
+              ($\nabla s$, $\Delta s$, \dots): high, even spectral, accuracy
+              for smooth $f$.
+        \item \hl{Local versions scale to large data}: partition of unity
+              (RBF-PU), RBF-FD $\Rightarrow$ sparse matrices, millions of
+              points, parallel. Fast multipole methods for global ones.
+        \item Error estimates, exact interpolation, few hyperparameters.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \textbf{Applications}
+      \begin{itemize}
+        \item \hl{Meshless PDE solvers} (Kansa, local collocation, RBF-FD):
+              heat transfer, elasticity, \hl{CFD}, geosciences.
+        \item \hl{CFD and FSI}: mesh deformation, data transfer between
+              non-matching meshes.
+        \item \hl{Image reconstruction}: inpainting, registration, medical
+              imaging.
+        \item \hl{Surface reconstruction} from 3D point clouds.
+        \item Surrogate models for optimization; geostatistics.
+      \end{itemize}
+      \vspace{0.3em}
+      \textbf{Networks are preferable when} the dimension is very high or
+      features must be learned from raw data (classification of images,
+      text, audio).
+      \vspace{0.2em}
+
+      \textbf{RBF challenge:} ill-conditioning of global methods, mitigated
+      by local methods and stable bases.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =====================================================================
 \section{Exercise: optimizing the shape parameter}
 % =====================================================================
 
@@ -719,23 +1566,28 @@ def ls_fit(idx):
 % =====================================================================
 
 \begin{frame}{Take-home messages}
+  \small
   \begin{itemize}
     \item RBF approximation: $m < n$ terms, coefficients by
-          \hl{least squares}. Only distances are needed: works for
+          \hl{least squares}. Only distances are needed: it works for
           scattered data in any dimension.
-    \item The \hl{polynomial augmentation} captures smooth trends; the
+    \item The \hl{polynomial augmentation} captures smooth trends. The
           orthogonality condition is necessary for interpolation, optional
           for approximation.
     \item \hl{Where} the centers are matters: greedy selection reaches the
           same accuracy with far fewer centers than random selection.
     \item More centers always reduce the error on the data, but not the true
-          error: beware of \hl{overfitting}. Use the noise level or
-          validation to decide when to stop.
-    \item Next: the shape parameter $\varepsilon$, which also matters.
+          error: beware of \hl{overfitting}.
+    \item The RBF matrix is \hl{ill-conditioned}. First-order (gradient)
+          methods cannot overcome that: it is a theorem.
+    \item Curvature (second order) does, even with sampling: stochastic
+          Gauss-Newton, and recursive least squares (one row at a time,
+          exact).
   \end{itemize}
-  \vspace{0.5em}
-  \small Code: \texttt{example01\_rbf\_mq\_slsqp.py},
-  \texttt{example02\_rbf\_greedy\_centers.py}
+  \vspace{0.3em}
+  \small Code: \texttt{example01\_rbf\_mq\_slsqp.py}, \texttt{example02\_rbf\_greedy\_centers.py},
+  \texttt{example03\_rbf\_sgd.py}, \texttt{example04\_rbf\_stochastic\_gauss\_newton.py},
+  \texttt{example05\_rbf\_rls\_sherman\_morrison.py}
 \end{frame}
 
 \end{document}
